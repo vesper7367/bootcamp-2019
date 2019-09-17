@@ -94,17 +94,74 @@ Create a function that given a data frame will print the name of each column and
 data_frame_name_class <- function(df){
     col <- names(df)
     for(i in col){
-        print(paste(i, ":", mode(df[,i])))
+        print(paste(i, ":", mode(df[,i]))) # class[,i]
     }
 }
 data_frame_name_class(gapminder)
 ```
 
 
+Create a function that given a vector will print the mean and the standard deviation of a vector, it will optionally also print the median. Hint: include an argument that takes a boolean (TRUE/FALSE) operator and then include an if statement.
+```{r}
+vec_mean_sd <- function(vec, flag = FALSE){
+    print(paste("Mean:", mean(vec)))
+    print(paste("Standard Deviation:", sd(vec)))
+    if (flag == TRUE){
+        print(paste("Median:", median(vec)))
+    }
+}
+vec_mean_sd(gapminder$lifeExp, flag = TRUE)
+```
+```{r}
+vec_mean_sd(gapminder$lifeExp, flag = FALSE)
+```
 
+### Analyzing the relationship between GDP per capita and life expectancy
+Use what you've learned so far to answer the following questions using the gapminder dataset. Be sure to include some visualizations!
 
+1. What is the relationship between GDP per capita and life expectancy? Does this relationship change over time? (Hint: Use the natural log of both variables.)
+```{r}
+viz_lm <-
+  function(df, dv, iv, year) {
+    dat <- df[df[["year"]] == year, ]
+    y <- log(dat[[dv]])
+    x <- log(dat[[iv]])
+    fit <- lm(y ~ x)
+    plot(y ~ x, main = year,
+         xlab = iv, ylab = dv)
+    lines(x, predict(fit), col = 'blue')
+  }
+```
 
+```{r}
+for (i in years) {
+  viz_lm(gapminder, "lifeExp", "gdpPercap", i)
+}
 
+```
+
+2. Does the relationship between GDP per capita and life expectacy vary by continent? Make sure you divide the Americas into North and South America.
+
+```{r}
+viz_lm <-
+  function(df, dv, iv, continent) {
+    dat <- df[df[["continent"]] == continent, ]
+    y <- log(dat[[dv]])
+    x <- log(dat[[iv]])
+    fit <- lm(y ~ x)
+    plot(y ~ x, main = continent,
+         xlab = iv, ylab = dv)
+    lines(x, predict(fit), col = 'blue')
+  }
+```
+
+```{r}
+for (i in continent) {
+  viz_lm(gapminder, "lifeExp", "gdpPercap", i)
+}
+```
+
+```
 
 
 
