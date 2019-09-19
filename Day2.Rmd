@@ -1,0 +1,415 @@
+---
+title: "Day 2 lecture"
+output: html_document
+---
+
+```{r}
+library(here)
+library(readr)
+generation <- read.csv(here::here("data/ca_energy_generation.csv"), stringsAsFactors = F )
+imports <- read.csv(here::here("data/ca_energy_imports.csv"), stringsAsFactors = F)
+```
+
+```{r}
+str(generation)
+```
+
+```{r}
+class(generation$datetime)
+class(imports$datetime)
+```
+
+## Lubridate package
+
+- The best way to deal with date-time data is to use the lubridate package
+- You can convert character variables into datetime format using the as_datetime function
+- One advantage of readr::read_csv is that it will often detect and convert datetime variables when importing
+
+```{r}
+library(lubridate)
+generation$datetime <- as_datetime(generation$datetime)
+class(generation$datetime)
+```
+
+```{r}
+head(generation$datetime)
+```
+
+```{r}
+imports$datetime <- as_datetime(imports$datetime)
+class(imports$datetime)
+head(imports$datetime)
+```
+
+## reshape2
+1. melt –> make data long
+2. dcast –> make data wide
+3. recast–> melt then cast data
+```{r}
+head(generation)
+```
+
+Right now, the generation dataframe has several observations per row
+```{r}
+library(reshape2)
+long_gen <- melt(generation, id.vars = "datetime",
+                             variable.name = "source",
+                             value.name = "usage")
+head(long_gen)
+```
+
+
+```{r}
+head(long_gen[order(long_gen$datetime), ])
+```
+
+## Merging
+1. merge(x, y, by = c("id", "year"))
+
+x: first dataframe
+y: second dataframe
+by: variables to match (must have common name)
+
+
+2. merge(x, y, by.x = "id", by.y = "cd", all.x = T, all.y = T)
+
+Use by.x and by.y if the dataframes have different variable names
+Use all.x = T if you want to keep all the observation in the first dataframe (unmatched observations in y are dropped!)
+Use all.y = T if you want to keep all observations in the second dataframe (umatched observations in x are dropped!)
+Use both (or, simply all = T) to keep all observations!
+By default R will drop unmatched observations from both data frames
+```{r}
+merged_energy <- merge(generation, imports, by = "datetime")
+dim(merged_energy)
+```
+```{r}
+head(merged_energy)
+```
+
+Our merged dataframe is still wide and untidy
+Create a long version called long_merged_energy
+```{r}
+long_merged_energy <- melt(merged_energy, id.vars = "datetime",
+                           variable.name = "source",
+                           value.name = "usage")
+head(long_merged_energy)
+```
+
+
+## Two approaches to data manipulation
+dplyr, and data.table, are two packages used to process data in tabular form
+
+dplyr: chain together a few, simple functions
+data.table: compact, syntax-based commands
+
+data.table is much faster on large data (dplyr is explicitly meant for small-to-medium data)
+```{r}
+library(tidyverse)
+```
+
+### dplyr verbs
+select –> subset variables
+filter –> subset observations based on conditions
+mutate –> add new variables
+summarize –> reduce multiple observations to a single value (e.g., find the mean)
+
+**Select**
+1. select by name:
+select(gapminder, continent, pop)
+2. select by position:
+select(df, c(1, 3, 10))
+3. select by range:
+select(df, country:pop) or select(df, 1:3)
+4. drop variables with -
+select(df, -gdpPercap)
+```{r}
+tmp <- select(merged_energy, biogas, biomass, geothermal, solar)
+names(tmp)
+
+tmp <- select(merged_energy, -biogas, -biomass, -geothermal, -solar)
+names(tmp)
+```
+
+There are several “select helpers” that make subsetting variables very easy
+one_of(), contains(), starts_with(), ends_with(), matches()
+
+```{r}
+tmp <- select(merged_energy, contains("hydro"), starts_with("bio"))
+names(tmp)
+```
+
+**Filter**
+```{r}
+tmp <- filter(merged_energy, imports > 7000)
+nrow(tmp)
+head(tmp)
+```
+
+Multiple conditions
+```{r}
+tmp <- filter(merged_energy, imports > 7000, natural_gas < 7000)
+nrow(tmp)
+head(tmp)
+```
+
+
+**Mutate**
+mutate creates new variables
+```{r}
+tmp <- mutate(long_merged_energy, log_usage = log(usage))
+head(tmp)
+```
+
+**Summarize**
+summarize reduces observations to a single value based on functions - mean, sum, sd, min, max, etc.
+```{r}
+# total energy consumption
+summarize(long_merged_energy, total = sum(usage, na.rm = T))
+# mean energy consumption
+summarize(long_merged_energy, mean_cons = mean(usage, na.rm = T))
+```
+
+### A new operator: the pipe %>%
+The powerful %>% operator lets you chain together functions
+It sends the result of one function to another function
+Read %>% as “then”
+```{r}
+long_merged_energy %>% 
+  filter(source == "geothermal") %>% 
+  select(-datetime) %>% 
+  mutate(log_usage = log(usage)) %>% 
+  summarize(mean_log_usage = mean(log_usage, na.rm = T))
+```
+
+While piping, the piped dataframe is not changed!
+To refer to the manipulated dataframe, use .
+
+*Exercise*
+**MAC --> CMD+SHIFT+M**
+**PC --> CNTL+SHIFT+M**
+
+Using the (wide) merged CA energy data merged_energy do the following with pipes:
+1. Select variables that contain the word “hydro”
+2. Create a new variable called total_hydro that is the sum of the retained hydro variables
+3. Find the mean usage for total_hydro
+```{r}
+head(merged_energy)
+```
+
+```{r}
+merged_energy %>% 
+    select(contains("hydro")) %>% 
+    mutate(total_hydro = rowSums(.,na.rm = T)) %>% 
+    summarize(mean_hydro = mean(total_hydro, na.rm = T))
+```
+
+
+### group_by and summarize
+perform operations by groups of observations
+```{r}
+long_merged_energy %>% 
+  group_by(source) %>% 
+  summarize(sum_usage = sum(usage, na.rm = T))
+```
+
+group_by versus for loops    
+```{r}
+gapminder <- read.csv(here::here("data/gapminder5.csv"))
+
+gapminder %>% 
+  group_by(year) %>% 
+  summarize(mean_le = mean(lifeExp, na.rm = T),
+            sd_lf = sd(lifeExp, na.rm = T))
+```
+
+Find the mean by source
+Use your knowledge of dplyr to find the mean usage for small hydro, large hydro, biogas, and biomass
+Start with either the wide or long merged dataset
+```{r}
+long_merged_energy %>% 
+    group_by(source) %>% 
+    # same as source == "small_hydro" | source == "large_hydro" ... 
+    summarize(mean_usage = mean(usage, na.ram = T)) %>% 
+    filter(source %in% c("small_hydro", "large_hydro", "biogas", "biomass"))
+```
+
+Alternative
+```{r}
+merged_energy %>% 
+  select(datetime, contains("hydro"), contains("bio")) %>% 
+  melt(id.vars = "datetime",
+       variable.name = "source",
+       value.name = "usage") %>% 
+  group_by(source) %>% 
+  summarize(mean_usage = mean(usage, na.rm = T))
+```
+
+Merging in dplyr with *_join functions
+dplyr’s philosophy is to have more functions with fewer options
+
+1. left_join - keeps all observations in the first dataframe
+merge(all.x = T)
+2. right_join - keeps all observations in the second dataframe
+merge(all.y = T)
+3. full_join - keeps all observations in both dataframes
+merge(all = T)
+4. inner_join - keeps only those observations that are matched in both datasets
+merge(all = F)
+
+Check dplyr cheatsheets!
+
+### data table
+```{r}
+# import data.table library
+library(data.table)
+
+data_file <- here::here("data", "ca_energy_generation.csv")
+
+# read in two versions of data, one as a data.frame and one as a data.table
+generation_df <- read.csv(data_file, stringsAsFactors = F)
+
+generation_dt <- fread(data_file)
+```
+
+```{r}
+class(generation_df)
+class(generation_dt)
+```
+```{r}
+View(generation_df)
+View(generation_dt)
+generation_df
+generation_dt
+str(generation_df)
+str(generation_dt)
+```
+
+
+**data table syntax**
+think in terms of basic units -- rows, columns, and groups
+data.table syntax provides placeholder for each of them
+
+general form
+DT[i,j,by] -- on which rows? what to do? grouped by what?
+
+1. i: “on which rows” (row filtering)
+```{r}
+generation_dt[wind > 4400]
+```
+
+```{r}
+generation_dt[wind > 4400 & mday(datetime) == 7]
+```
+
+*Exercise*
+
+try it! select rows for which natural gas generation is less than or equal to 5,000 MW and large hydro generation is greater than 2,000 MW
+```{r}
+generation_dt[natural_gas <= 5000 & large_hydro > 2000]
+
+```
+bonus: select rows for which coal generation is greater than 10 MW and solar generation is greater than the median value of solar generation
+```{r}
+generation_dt[coal > 10 & solar > median(solar)]
+```
+
+2. j: “what to do” (column operations)
+```{r}
+generation_dt[,wind + solar]
+```
+
+```{r}
+generation_dt[,3*wind + solar*biogas/2]
+```
+
+- New columns may be assigned in j or a new table can be created
+```{r}
+# := in place, add new columns in original table
+generation_dt[,newcol := 3*wind + solar*biogas/2]
+```
+
+```{r}
+# .() export data, create new table
+generation_dt[,.(newcol = 3*wind + solar*biogas/2)]
+```
+
+- Columns may be deleted in j
+```{r}
+generation_dt[,newcol := NULL]
+```
+
+*Exercise*
+
+try it! add a column called “total_hydro” that is the sum of the small_hydro and large_hydro columns
+```{r}
+generation_dt[,total_hydro := small_hydro + large_hydro]
+```
+try it! find the mean of the nuclear and biogas columns
+```{r}
+generation_dt[,.(mean(nuclear), mean(biogas))]
+```
+bonus: create a new table: for the hours when solar generation is zero, get the datetime and total_thermal (sum of natural gas and coal generation)
+```{r}
+generation_dt[solar == 0 ,.(datetime, total_thermal = natural_gas + coal)]
+```
+
+3. by: “grouped by what” (add grouping to any operation)
+
+```{r}
+generation_dt[,.(mean_nuc = mean(nuclear), mean_wind = mean(wind)), 
+              by = mday(datetime)]
+```
+
+
+*Exercise*
+
+try it! find the median solar generation by hour.
+```{r}
+generation_dt[,.(median_solar = median(solar)), by = hour(datetime)]
+```
+try it! for hours when the solar generation is greater than zero, find the maximum natural gas generation by day
+```{r}
+generation_dt[solar > 0,.(max_ng = max(natural_gas)), by = mday(datetime)]
+```
+
+
+### dplyr -> data.table
+
+try it! Convert this dplyr syntax into data.table syntax (remember that this created the columns day, log_output, and per_output)
+```{r}
+long_ca_energy <- long_ca_energy %>%
+  mutate(day = as_date(datetime),
+         log_output = log(output)) %>%
+  group_by(day) %>%
+  mutate(total_daily_output = sum(output, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(per_output = output/total_daily_output)
+```
+
+becomes
+```{r}
+all_generation_long[,day := as_date(datetime)]
+all_generation_long[,log_output := log(value)]
+all_generation_long[,per_output := value/sum(value), by = day]
+```
+
+Or in one command
+```{r}
+all_generation_long[,`:=`(day2 = as_date(datetime), 
+                          log_output2 = log(value), 
+                          per_output2 = value/sum(value)), 
+                    by = day]
+```
+
+### fread and fwrite
+Similar to read.table but faster and more convenient
+
+
+
+
+
+
+
+
+
+
